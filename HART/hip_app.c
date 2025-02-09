@@ -26,9 +26,9 @@
  */
 _NVM_DATA_STRUCT NvmData; // NVM data
 
-uint8_t DevTypeCode[2] = {0x00, 0xf5};
+uint8_t DevTypeCode[2] = {0xf9, 0xf5};
 uint8_t DevUniqueID[3] = {0x00, 0x00, 0x00};
-uint8_t ManuID[2] = {0x00, 0xf9};
+uint8_t ManuID[2] = {0xfe, 0xf9};
 
 uint8_t DeviceStatus; // Device Status
 uint8_t ColdStartFlg; // Cold Start Flag
@@ -56,7 +56,7 @@ static void Factory_Recovery (void)
 	NvmData.CmdCfgChgFlg = 0x00; // <TODO> Should not be reset
 	NvmData.PollingAddr = 0x00;	// Polling Address
 
-	sprintf(str, "00-%2X-%2X-%2X-%2X-%2X", ManuID[0], ManuID[1], DevUniqueID[0], DevUniqueID[1], DevUniqueID[2]);
+	sprintf(str, "00-%02X-%02X-%02X-%02X-%02X", ManuID[0], ManuID[1], DevUniqueID[0], DevUniqueID[1], DevUniqueID[2]);
 	memcpy(NvmData.LongTag, (uint8_t*)str, 17);
 	memset(NvmData.LongTag+17, 0, 32-17); // Long tag (Latin-1)
   memset(NvmData.UnitTag, 0, 32); // Process Unit tag (Latin-1)
@@ -260,6 +260,9 @@ void hip_app_route_1s(void)
 {
 	float f;
 	
+	/* Toggle the LED */
+	HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
+	
 	/* Chip temperature sub-task */
 	fPv = single_chipT_conv();
 	f = (PV_Simu.Mode) ? PV_Simu.Value : fPv;
@@ -358,7 +361,7 @@ void String2Bytes(char* pChar, uint8_t* pBytes, uint8_t byte_len)
 void Bytes2String(uint8_t* pBytes, char* pChar, uint8_t byte_len)
 {
 	for (uint8_t i=0; i<byte_len; i++) {
-		sprintf(pChar+i*2, "%2X", pBytes[i]);
+		sprintf(pChar+i*2, "%02X", pBytes[i]);
 	}
 }
 

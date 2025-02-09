@@ -65,6 +65,8 @@ void Error_Handler(void);
 #define W5500_SCS_GPIO_Port GPIOB
 #define W5500_INT_Pin GPIO_PIN_8
 #define W5500_INT_GPIO_Port GPIOA
+#define LED_Pin GPIO_PIN_9
+#define LED_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
 

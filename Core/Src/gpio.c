@@ -54,7 +54,7 @@ void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(W5500_RST_GPIO_Port, W5500_RST_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, W25Q64_CS_Pin|W5500_SCS_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(GPIOB, W25Q64_CS_Pin|W5500_SCS_Pin|LED_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pins : W5500_RST_Pin W25Q64_CS_Pin W5500_SCS_Pin */
   GPIO_InitStruct.Pin = W5500_RST_Pin|W25Q64_CS_Pin|W5500_SCS_Pin;
@@ -68,6 +68,13 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(W5500_INT_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : LED_Pin */
+  GPIO_InitStruct.Pin = LED_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_OD;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(LED_GPIO_Port, &GPIO_InitStruct);
 
 }
 
