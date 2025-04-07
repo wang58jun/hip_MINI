@@ -405,34 +405,33 @@ void hip_burst_push(uint8_t* pBtPdu)
 		if (b) {
 			uint16_t len;
 #ifdef _PUB_TP_MODE_
-			/* Total length: 5 Preamble + 1 Delimiter + 5 Address + 1 Command + 1 Bytecount + 1 RC + 1 DevStatus + data + 1 Checkbyte */ 
-			len = 5 + 1 + 5 + 1 + 1 + 1 + pBtPdu[2] + 1;
-			memset(pub_pdu[i].payload, 0xff, 5); // Preamble
-			pub_pdu[i].payload[5] = 0x81; // Delimiter: BACK
+			/* Total length: 1 Delimiter + 5 Address + 1 Command + 1 Bytecount + 1 RC + 1 DevStatus + data + 1 Checkbyte */ 
+			len = 1 + 5 + 1 + 1 + 1 + pBtPdu[2] + 1;
+			pub_pdu[i].payload[0] = 0x81; // Delimiter: BACK
 			if (Cli_Sub[i].BC_addr) {
-				memset(pub_pdu[i].payload+6, 0x00, 5); // Broadcast address
+				memset(pub_pdu[i].payload+1, 0x00, 5); // Broadcast address
 			} else {
-				pub_pdu[i].payload[6] = DevTypeCode[0] & 0x3f;
-				pub_pdu[i].payload[7] = DevTypeCode[1];
-				pub_pdu[i].payload[8] = DevUniqueID[0];
-				pub_pdu[i].payload[9] = DevUniqueID[1];
-				pub_pdu[i].payload[10] = DevUniqueID[2]; 
+				pub_pdu[i].payload[1] = DevTypeCode[0] & 0x3f;
+				pub_pdu[i].payload[2] = DevTypeCode[1];
+				pub_pdu[i].payload[3] = DevUniqueID[0];
+				pub_pdu[i].payload[4] = DevUniqueID[1];
+				pub_pdu[i].payload[5] = DevUniqueID[2]; 
 			}
 			if (cmd <= 256) {
-				pub_pdu[i].payload[11] = pBtPdu[1]; // Command number
-				pub_pdu[i].payload[12] = pBtPdu[2] + 1; // Byte count
-				if (pBtPdu[2]) { memcpy(pub_pdu[i].payload+15, pBtPdu+4, pBtPdu[2]-1); }
+				pub_pdu[i].payload[6] = pBtPdu[1]; // Command number
+				pub_pdu[i].payload[7] = pBtPdu[2] + 1; // Byte count
+				if (pBtPdu[2]) { memcpy(pub_pdu[i].payload+10, pBtPdu+4, pBtPdu[2]-1); }
 			} else {
-				pub_pdu[i].payload[11] = 0x31;
-				pub_pdu[i].payload[12] = pBtPdu[2] + 3;
-				pub_pdu[i].payload[15] = pBtPdu[0];
-				pub_pdu[i].payload[16] = pBtPdu[1];
-				if (pBtPdu[2]) { memcpy(pub_pdu[i].payload+17, pBtPdu+4, pBtPdu[2]-1); }
+				pub_pdu[i].payload[6] = 0x31;
+				pub_pdu[i].payload[7] = pBtPdu[2] + 3;
+				pub_pdu[i].payload[10] = pBtPdu[0];
+				pub_pdu[i].payload[11] = pBtPdu[1];
+				if (pBtPdu[2]) { memcpy(pub_pdu[i].payload+12, pBtPdu+4, pBtPdu[2]-1); }
 				len += 2;
 			}
-			pub_pdu[i].payload[13] = pBtPdu[3]; // Response code
-			pub_pdu[i].payload[14] = Get_DevStatus(); // Device Status
-			pub_pdu[i].payload[len-1] = CheckByte(pub_pdu[i].payload+5, len-6);
+			pub_pdu[i].payload[8] = pBtPdu[3]; // Response code
+			pub_pdu[i].payload[9] = Get_DevStatus(); // Device Status
+			pub_pdu[i].payload[len-1] = CheckByte(pub_pdu[i].payload, len-1);
 #else
 			len = (pub_pdu[i].len[0] << 8) + pub_pdu[i].len[1];
 			if (len == 0) {

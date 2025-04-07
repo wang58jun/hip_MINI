@@ -347,7 +347,7 @@ void BTCmd_Exe(uint8_t idx)
 	if (n > 0) {
 		Rsp[0] = (cmd >> 8) & 0xff;
 		Rsp[1] = (cmd) & 0xff;
-		Rsp[2] = (uint8_t)n;
+		Rsp[2] = (uint8_t)n + 1; // Plus the response code
 		hip_burst_push(Rsp);
 	}
 }
