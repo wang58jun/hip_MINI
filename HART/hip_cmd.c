@@ -382,7 +382,7 @@ static int16_t Cmd0Routine(uint8_t req_bc, uint8_t *pIn, uint8_t *pRC, uint8_t *
   pOut[18] = ManuID[1];
   pOut[19] = ManuID[0];
   pOut[20] = ManuID[1];
-  pOut[21] = 1;
+  pOut[21] = 65; // HART-IP PA Device
 
   CMD_RSP_CODE = 0;
 	return 22;
