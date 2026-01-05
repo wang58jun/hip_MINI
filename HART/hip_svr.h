@@ -14,7 +14,6 @@ extern "C" {
 
 /* Definitions */
 #define _HIP_DEBUG_
-#define _PUB_TP_MODE_
 
 #ifndef FALSE
 #define FALSE 0

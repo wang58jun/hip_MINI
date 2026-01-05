@@ -154,9 +154,12 @@ static inline _AUDIT_LOG_STRUCT* new_audit_log(void)
 /* Session close */
 static inline void session_close(uint8_t sn, uint16_t audit_sss)
 {
-	if (session[sn].actived && (session[sn].pAuditLog != NULL)) {
-		audit_time_record(session[sn].pAuditLog->dis_time);
-		session[sn].pAuditLog->SSS |= audit_sss;
+	if (session[sn].actived) {
+		tcp_server_close(sn);
+		if (session[sn].pAuditLog != NULL) {
+			audit_time_record(session[sn].pAuditLog->dis_time);
+			session[sn].pAuditLog->SSS |= audit_sss;
+		}
 	}
 	session[sn].actived = 0;
 	session[sn].cli_ver = 1;
@@ -259,11 +262,7 @@ void hip_server_init(void)
 		pub_seq_num[i] = 0;
 		pub_pdu[i].version = session[i].cli_ver;
 		pub_pdu[i].msg_type = 0x02; // Publish
-#ifdef _PUB_TP_MODE_
 		pub_pdu[i].msg_ID = 0x03; // TP-Passing PDU
-#else
-		pub_pdu[i].msg_ID = 0x04; // Direct PDU
-#endif
 		pub_pdu[i].status = 0x00;
 		pub_pdu[i].seq_num[0] = pub_pdu[i].seq_num[1] = 0x00;
 		pub_pdu[i].len[0] = pub_pdu[i].len[1] = 0x00;
@@ -338,7 +337,17 @@ void hip_server_thread(void)
 			len = req_pdu_handler(len);
 			if (len) { // Need to respond
 				tcp_transmit_rsp(&xmt_pdu); // Send to tcp server
-				if (session[sn_idx].actived) { session[sn_idx].tick = 0; } // Reset session tick
+				if (session[sn_idx].actived) {
+					session[sn_idx].tick = 0; // Reset session tick
+#if TLS_ENABLE
+					if ((xmt_pdu.msg_ID == 0) && (xmt_pdu.version >= 2) && (len >= 13)) {
+						int u = tls_connect(sn_idx, NvmData.CliRec[sn_idx].PSK, NvmData.CliRec[sn_idx].cli_ID);
+#ifdef _HIP_DEBUG_
+						usb_printf("TLS create result: %d \r\n", u);
+#endif
+					}
+#endif
+				}
 			}
 		}
 
@@ -404,7 +413,6 @@ void hip_burst_push(uint8_t* pBtPdu)
 		}
 		if (b) {
 			uint16_t len;
-#ifdef _PUB_TP_MODE_
 			/* Total length: 1 Delimiter + 5 Address + 1 Command + 1 Bytecount + 1 RC + 1 DevStatus + data + 1 Checkbyte */ 
 			len = 1 + 5 + 1 + 1 + 1 + pBtPdu[2] + 1;
 			pub_pdu[i].payload[0] = 0x81; // Delimiter: BACK
@@ -432,17 +440,6 @@ void hip_burst_push(uint8_t* pBtPdu)
 			pub_pdu[i].payload[8] = pBtPdu[3]; // Response code
 			pub_pdu[i].payload[9] = Get_DevStatus(); // Device Status
 			pub_pdu[i].payload[len-1] = CheckByte(pub_pdu[i].payload, len-1);
-#else
-			len = (pub_pdu[i].len[0] << 8) + pub_pdu[i].len[1];
-			if (len == 0) {
-				pub_pdu[i].payload[0] = Get_DevStatus();
-				pub_pdu[i].payload[1] = EXT_DEV_STATUS;
-				len = 2;
-			}
-			uint8_t n = pBtPdu[2] + 3;
-			memcpy(pub_pdu[i].payload+len, pBtPdu, n);
-			len += n;
-#endif
 			pub_pdu[i].len[0] = (len >> 8) & 0xff;
 			pub_pdu[i].len[1] = (len) & 0xff;
 		}
@@ -484,12 +481,6 @@ void sec_chg_notify(void)
 */
 static uint16_t req_pdu_handler(uint16_t bc)
 {
-	// Check if need to decrypt
-	if ((session[sn_idx].actived) && (session[sn_idx].cli_ver >= 2)) {
-		/* TODO */
-
-	}
-
 	// Check the length
 	if (bc != (rcv_pdu.len[0] * 256 + rcv_pdu.len[1])) {
 		session_close(sn_idx, AUDIT_SSS_ABORT);
@@ -701,11 +692,6 @@ static int32_t tcp_transmit_rsp(_HIP_PDU_STRUCT *pTxPdu)
 	if ((session[sn_idx].actived) || (pTxPdu->msg_ID == 0x01)) {
 		uint16_t len = (pTxPdu->len[0] << 8) + pTxPdu->len[1];
 		uint8_t* pbuf = (uint8_t*)pTxPdu;
-
-		// Check if need to crypt
-		if (session[sn_idx].cli_ver >= 2) {
-			/* TODO */
-		}
 
 		if (session[sn_idx].pAuditLog != NULL) {
 			if (pTxPdu == &xmt_pdu) {

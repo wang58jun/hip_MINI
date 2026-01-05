@@ -17,6 +17,8 @@ extern "C" {
 #define DHCP_SOCK_NUM   7
 #define TCP_BUF_SIZE  512
 
+#define TLS_ENABLE      0
+
 // Variables
 extern wiz_NetInfo gWIZNETINFO;
 
@@ -30,6 +32,12 @@ void set_port_number (uint8_t sn, uint16_t port_num);
 uint16_t tcp_server_pull (uint8_t sn, uint8_t* tcpPdu);
 
 int32_t tcp_server_push (uint8_t sn, uint8_t* tcpPdu, uint16_t len);
+
+int8_t tcp_server_close (uint8_t sn);
+
+#if TLS_ENABLE
+int tls_connect(uint8_t sn, uint8_t* psk, char* client);
+#endif
 
 #ifdef __cplusplus
 }

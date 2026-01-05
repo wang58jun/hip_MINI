@@ -18,9 +18,27 @@
    #include <stdio.h>
 #endif
 
+#if TLS_ENABLE
+#include "mbedtls.h"
+#include "mbedtls/net_sockets.h"
+
+const uint16_t cipherSuites[] = {MBEDTLS_TLS_PSK_WITH_AES_128_GCM_SHA256,
+                                MBEDTLS_TLS_PSK_WITH_AES_128_CBC_SHA256,
+                                MBEDTLS_TLS_PSK_WITH_AES_128_CCM};
+#endif
+
 /*
  * Definitions
  */
+#if TLS_ENABLE
+typedef struct
+{
+	mbedtls_ssl_context TlsCtx;      // TLS context
+	mbedtls_ssl_config TlsCfg;       // TLS configuration
+	mbedtls_ctr_drbg_context CtrDrbg;
+	mbedtls_entropy_context entropy;
+} _TLS_STRUCT;
+#endif
 
 /*
  * Variables
@@ -36,6 +54,10 @@ static uint8_t dhcp_sock_buff[TCP_BUF_SIZE];
 static uint16_t port[TCP_SOCKS_CNT+UDP_SOCKS_CNT] = {5094, 5094, 5094, 5094, 5094, 5094, 5094};
 static uint8_t rmt_udp_ip[UDP_SOCKS_CNT][4];
 static uint16_t rmt_udp_port[UDP_SOCKS_CNT];
+
+#if TLS_ENABLE
+static _TLS_STRUCT tls[TCP_SOCKS_CNT + UDP_SOCKS_CNT];
+#endif
 
 /*
  * local functions
@@ -143,7 +165,15 @@ uint8_t tcp_server_init (uint8_t dhcp_en)
 {
   register_wizchip_cbfunc(); // Wiz chip call-back functions registration
   reset_wizchip(); // Reset Wiz chip
-	
+
+#if TLS_ENABLE
+  MX_MBEDTLS_Init();
+  for (uint8_t i=0; i<(TCP_SOCKS_CNT+UDP_SOCKS_CNT); i++) {
+    mbedtls_ssl_init(&tls[i].TlsCtx);
+    mbedtls_ssl_config_init(&tls[i].TlsCfg);
+  }
+#endif
+
   if (dhcp_en) { // start DHCP
 		return dhcp_start();
 	}
@@ -198,7 +228,14 @@ uint16_t tcp_server_pull (uint8_t sn, uint8_t* tcpPdu)
 		len = getSn_RX_RSR(sn);
 		if(len) {
 			memset(tcpPdu, 0, len+1);
-			recv(sn, tcpPdu, len);
+#if TLS_ENABLE
+      if (tls[sn].TlsCtx.private_state != MBEDTLS_SSL_HELLO_REQUEST) {
+        mbedtls_ssl_read(&tls[sn].TlsCtx, (void*)tcpPdu, (size_t)len);
+      } else
+#endif
+      {
+        recv(sn, tcpPdu, len);
+      }
 #ifdef _TCP_DEBUG_
 			// loop back
 			printf("Socket-%d: %s\r\n", sn, tcpPdu);
@@ -236,8 +273,125 @@ uint16_t tcp_server_pull (uint8_t sn, uint8_t* tcpPdu)
 int32_t tcp_server_push (uint8_t sn, uint8_t* tcpPdu, uint16_t len)
 {
 	if (sn < TCP_SOCKS_CNT) {
-		return send(sn, tcpPdu, len);
+#if TLS_ENABLE
+    if (tls[sn].TlsCtx.private_state != MBEDTLS_SSL_HELLO_REQUEST) {
+      return mbedtls_ssl_write(&tls[sn].TlsCtx, (void*)tcpPdu, (size_t)len);
+    } else
+#endif
+    {
+      return send(sn, tcpPdu, len);
+    }
 	} else {
 		return sendto(sn, tcpPdu, len, rmt_udp_ip[sn], rmt_udp_port[sn]);
 	}
 }
+
+// tcp/udp socket close
+int8_t tcp_server_close (uint8_t sn)
+{
+#if TLS_ENABLE
+  // Release TLS context
+  if (tls[sn].TlsCtx.private_state != MBEDTLS_SSL_HELLO_REQUEST) {
+    mbedtls_ssl_free(&tls[sn].TlsCtx);
+  }
+#endif
+
+  return disconnect(sn);
+}
+
+
+#if TLS_ENABLE
+/**
+ * @brief Open secure connection
+ * @param[in] session number
+ * @return Error code
+ **/
+
+static int mbedtls_status_is_ssl_in_progress(int ret) {
+    return ret == MBEDTLS_ERR_SSL_WANT_READ ||
+           ret == MBEDTLS_ERR_SSL_WANT_WRITE ||
+           ret == MBEDTLS_ERR_SSL_ASYNC_IN_PROGRESS;
+}
+
+int tls_connect(uint8_t sn, uint8_t* psk, char* client)
+{
+  int ret;
+
+  //Init TLS context
+  mbedtls_ssl_init(&tls[sn].TlsCtx);
+  mbedtls_ssl_config_init(&tls[sn].TlsCfg);
+  mbedtls_ctr_drbg_init(&tls[sn].CtrDrbg);
+  mbedtls_entropy_init(&tls[sn].entropy);
+
+  do {
+    // Seed the random number generator
+    if ((ret = mbedtls_ctr_drbg_seed(&tls[sn].CtrDrbg, mbedtls_entropy_func, &tls[sn].entropy, NULL, 0)) != 0) {
+#ifdef _TCP_DEBUG_
+      printf("Failed to seed RNG: -0x%x\n", -ret);
+#endif
+      break;
+    }
+
+    // Configure SSL
+    if ((ret = mbedtls_ssl_config_defaults(&tls[sn].TlsCfg, MBEDTLS_SSL_IS_SERVER,
+                                            MBEDTLS_SSL_TRANSPORT_STREAM, MBEDTLS_SSL_PRESET_DEFAULT)) != 0) {
+#ifdef _TCP_DEBUG_
+      printf("Failed to configure SSL: -0x%x\n", -ret);
+#endif
+      break;
+    }
+    mbedtls_ssl_conf_rng(&tls[sn].TlsCfg, mbedtls_ctr_drbg_random, &tls[sn].CtrDrbg);
+    mbedtls_ssl_conf_renegotiation(&tls[sn].TlsCfg, MBEDTLS_SSL_RENEGOTIATION_DISABLED);
+    mbedtls_ssl_conf_ciphersuites(&tls[sn].TlsCfg, (const int *)cipherSuites);
+#if (1)
+    ret = mbedtls_ssl_conf_psk(&tls[sn].TlsCfg, psk, 16, (const uint8_t*)client, strlen(client));
+#else
+    /* BUG: HART-IP Portable Client v2 is using a string type for the PSK key */
+    unsigned char str[] = "7777772e68617274636f6d6d2e6f7267 ";
+    str[32] = '\0';
+    ret = mbedtls_ssl_conf_psk(&tls[sn].TlsCfg, str, 33, (const uint8_t*)client, strlen(client));
+#endif
+    if (ret != 0) {
+#ifdef _TCP_DEBUG_
+      printf("Failed to set up PSK: -0x%x\n", -ret);
+#endif
+      break;
+    }
+    // Setup SSL
+    if ((ret = mbedtls_ssl_setup(&tls[sn].TlsCtx, &tls[sn].TlsCfg)) != 0) {
+#ifdef _TCP_DEBUG_
+      printf("Failed to setup SSL: -0x%x\n", -ret);
+#endif
+      break;
+    }
+  } while(0);
+
+  if (ret == 0) {
+    // Setup BIO
+    mbedtls_ssl_set_bio(&tls[sn].TlsCtx, &sn, mbedtls_net_send, mbedtls_net_recv, NULL);
+
+    // Start handshake
+    while ((ret = mbedtls_ssl_handshake(&tls[sn].TlsCtx)) != 0) {
+      if (!mbedtls_status_is_ssl_in_progress(ret)) {
+#ifdef _TCP_DEBUG_
+        printf("Failed to perform SSL handshake: -0x%x\n", -ret);
+#endif
+        break;
+      }
+    }
+#ifdef _TCP_DEBUG_
+    if (ret == 0) {
+      printf("SSL handshake ok\n    [ Protocol is %s ]\n    [ Ciphersuite is %s ]\n",
+                mbedtls_ssl_get_version(&tls[sn].TlsCtx), mbedtls_ssl_get_ciphersuite(&tls[sn].TlsCtx));
+    }
+#endif
+  } else {
+    mbedtls_ssl_free(&tls[sn].TlsCtx);
+    mbedtls_ssl_config_free(&tls[sn].TlsCfg);
+    mbedtls_ctr_drbg_free(&tls[sn].CtrDrbg);
+    mbedtls_entropy_free(&tls[sn].entropy);
+  }
+
+  return ret;
+}
+#endif
